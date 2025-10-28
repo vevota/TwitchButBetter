@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Twitch Multistream Embed Replacer (Kick + YouTube Live Simplified Username)
-// @namespace    http://tampermonkey.net/
+// @name         TwitchButBetter
+// @namespace    http://violentmonkey.net/
 // @version      5.3
-// @description  Replace Twitch streams with Kick.cx or dynamic YouTube live. Tampermonkey menu with separate options. Auto-load per channel. Input only usernames.
+// @description  Replace Twitch streams with Kick.cx or dynamic YouTube live
 // @match        https://www.twitch.tv/*
 // @grant        GM_registerMenuCommand
 // @grant        GM_xmlhttpRequest
@@ -91,11 +91,11 @@
         }
     }
 
-    // Tampermonkey menu functions
+    // Tampermonkey/Violentmonkey menu functions
     function addOrEditKick() {
         const channel = getChannelName();
         if (!channel) return alert("Cannot detect channel from URL.");
-        const username = prompt("Enter Kick username") || "";
+        const username = prompt("Enter Kick username (without @):") || "";
         if (!username) return;
         const map = loadMap();
         map[channel] = { type: "kick", username };
@@ -140,7 +140,7 @@
         }
     }
 
-    // Register Tampermonkey menu commands
+    // Register Violentmonkey menu commands
     if (typeof GM_registerMenuCommand !== "undefined") {
         GM_registerMenuCommand("Add/Edit Kick Mapping", addOrEditKick);
         GM_registerMenuCommand("Add/Edit YouTube Mapping", addOrEditYouTube);
