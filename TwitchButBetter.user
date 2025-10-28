@@ -1,0 +1,155 @@
+// ==UserScript==
+// @name         Twitch Multistream Embed Replacer (Kick + YouTube Live Simplified Username)
+// @namespace    http://tampermonkey.net/
+// @version      5.3
+// @description  Replace Twitch streams with Kick.cx or dynamic YouTube live. Tampermonkey menu with separate options. Auto-load per channel. Input only usernames.
+// @match        https://www.twitch.tv/*
+// @grant        GM_registerMenuCommand
+// @grant        GM_xmlhttpRequest
+// @connect      youtube.com
+// ==/UserScript==
+
+(function() {
+    "use strict";
+
+    const STORAGE_KEY = "streamReplacerMap";
+    let hasAutoLoaded = false;
+
+    function loadMap() {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    }
+
+    function saveMap(map) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+    }
+
+    function getChannelName() {
+        const path = location.pathname.split("/");
+        if (path.length > 1) return path[1].toLowerCase();
+        return null;
+    }
+
+    function replacePlayer(embedUrl) {
+        const container = document.querySelector(".video-player__container");
+        if (!container) {
+            alert("Cannot find Twitch video container.");
+            return false;
+        }
+        document.querySelector("video")?.pause();
+        container.innerHTML = `
+            <iframe width="100%" height="100%"
+                src="${embedUrl}"
+                frameborder="0"
+                allow="autoplay; encrypted-media"
+                allowfullscreen>
+            </iframe>
+        `;
+        return true;
+    }
+
+    function embedKick(username) {
+        const cleanUsername = username.replace(/^@/, "");
+        return `https://player.kick.cx/${cleanUsername}`;
+    }
+
+    function fetchYouTubeLiveEmbed(username, callback) {
+        const cleanUsername = username.replace(/^@/, "");
+        const url = `https://www.youtube.com/@${cleanUsername}/live`;
+
+        GM_xmlhttpRequest({
+            method: "GET",
+            url: url,
+            headers: { "User-Agent": "Mozilla/5.0" },
+            onload: function(response) {
+                const match = response.responseText.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})">/);
+                if (!match) return alert(`No live stream found for ${cleanUsername}.`);
+                const videoId = match[1];
+                const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+                callback(embedUrl);
+            },
+            onerror: function() {
+                alert(`Failed to fetch live stream for ${cleanUsername}.`);
+            }
+        });
+    }
+
+    function attemptAutoLoad() {
+        if (hasAutoLoaded) return;
+        const channel = getChannelName();
+        if (!channel) return;
+        const map = loadMap();
+        const entry = map[channel];
+        if (!entry) return;
+
+        if (entry.type === "kick") {
+            const embed = embedKick(entry.username);
+            if (replacePlayer(embed)) hasAutoLoaded = true;
+        } else if (entry.type === "youtube") {
+            fetchYouTubeLiveEmbed(entry.username, (embed) => {
+                if (replacePlayer(embed)) hasAutoLoaded = true;
+            });
+        }
+    }
+
+    // Tampermonkey menu functions
+    function addOrEditKick() {
+        const channel = getChannelName();
+        if (!channel) return alert("Cannot detect channel from URL.");
+        const username = prompt("Enter Kick username") || "";
+        if (!username) return;
+        const map = loadMap();
+        map[channel] = { type: "kick", username };
+        saveMap(map);
+        alert("Kick mapping saved.");
+    }
+
+    function addOrEditYouTube() {
+        const channel = getChannelName();
+        if (!channel) return alert("Cannot detect channel from URL.");
+        const username = prompt("Enter YouTube username (without @):") || "";
+        if (!username) return;
+        const map = loadMap();
+        map[channel] = { type: "youtube", username };
+        saveMap(map);
+        alert("YouTube live mapping saved.");
+    }
+
+    function deleteMapping() {
+        const channel = getChannelName();
+        if (!channel) return alert("Cannot detect channel from URL.");
+        const map = loadMap();
+        if (!map[channel]) return alert("No mapping found for this channel.");
+        if (confirm(`Delete mapping for ${channel}?`)) {
+            delete map[channel];
+            saveMap(map);
+            alert("Mapping deleted.");
+        }
+    }
+
+    function loadMappingNow() {
+        const channel = getChannelName();
+        if (!channel) return alert("Cannot detect channel from URL.");
+        const map = loadMap();
+        const entry = map[channel];
+        if (!entry) return alert("No mapping found for this channel.");
+
+        if (entry.type === "kick") {
+            replacePlayer(embedKick(entry.username));
+        } else if (entry.type === "youtube") {
+            fetchYouTubeLiveEmbed(entry.username, (embed) => replacePlayer(embed));
+        }
+    }
+
+    // Register Tampermonkey menu commands
+    if (typeof GM_registerMenuCommand !== "undefined") {
+        GM_registerMenuCommand("Add/Edit Kick Mapping", addOrEditKick);
+        GM_registerMenuCommand("Add/Edit YouTube Mapping", addOrEditYouTube);
+        GM_registerMenuCommand("Delete Mapping", deleteMapping);
+        GM_registerMenuCommand("Load Mapping Now", loadMappingNow);
+    }
+
+    // Autoload mapping automatically
+    const observer = new MutationObserver(attemptAutoLoad);
+    observer.observe(document.body, { childList: true, subtree: true });
+
+})();
